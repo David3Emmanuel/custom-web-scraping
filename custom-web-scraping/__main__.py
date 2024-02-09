@@ -4,4 +4,5 @@ with open("custom-web-scraping/sample.html") as file:
     html = file.read()
 
 parsed = parse(html)
-print(parsed)
+with open("custom-web-scraping/out.html", 'w') as file:
+    print(parsed, file=file)

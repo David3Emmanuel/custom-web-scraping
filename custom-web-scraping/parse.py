@@ -1,8 +1,11 @@
 from enum import Enum
 import re
 
+from .tag import Tag, TagType
+from .tag import Doctype, Normal, SelfClosing, Comment, Content
 
-def parse(html: str) -> 'ParseTag':
+
+def parse(html: str) -> Tag:
     root_tag = ParseTag(tag_name="ROOT")
     for section in split_html_into_sections(html):
         try:
@@ -18,7 +21,7 @@ def parse(html: str) -> 'ParseTag':
                 raise ParseWarning("Last tag was not closed")
     root_tag.closed = True
 
-    return root_tag
+    return root_tag.convert()
 
 
 def split_html_into_sections(html: str) -> list[str]:
@@ -71,7 +74,8 @@ class ParseTag:
         self.tag_name = tag_name
         self.attributes = attributes
         self.closed = tag_name in void_elements
-        self.content: list[ParseTag | str] = []
+        self.type = TagType.SELF_CLOSING if tag_name in void_elements else TagType.NORMAL
+        self.content: list[ParseTag | Tag | str] = []
 
     def add(self, section: str) -> None:
         if self.closed:
@@ -85,11 +89,11 @@ class ParseTag:
         elif section_type == TagSection.CLOSING:
             self.handle_closing_tag(matched_groups)
         elif section_type == TagSection.DOCTYPE:
-            pass
+            self.handle_other_tags(Doctype(matched_groups[0]))
         elif section_type == TagSection.COMMENT:
-            pass
+            self.handle_other_tags(Comment(matched_groups[0]))
         elif section_type == TagSection.CONTENT:
-            pass
+            self.handle_other_tags(Content(matched_groups[0]))
         else:
             raise ParseError("Could not classify tag")
 
@@ -125,6 +129,25 @@ class ParseTag:
         else:
             raise ParseError("Encountered closing tag before opening tag")
 
+    def handle_other_tags(self, tag: Tag) -> None:
+        if self.tag_name:
+            if self.content:
+                previous_content = self.content[-1]
+                if isinstance(previous_content, ParseTag):
+                    if not previous_content.closed:
+                        previous_content.handle_other_tags(tag)
+                        return
+            self.content.append(tag)
+        else:
+            raise ParseError(f"Encountered {type(tag)} before opening tag")
+
+    def convert(self) -> Tag:
+        if self.type == TagType.SELF_CLOSING:
+            return SelfClosing(self)
+        elif self.type == TagType.NORMAL:
+            return Normal(self)
+        else:
+            raise ParseError
 
     def __repr__(self, level: int = 0, only_child: bool = False) -> str:
         out = []
